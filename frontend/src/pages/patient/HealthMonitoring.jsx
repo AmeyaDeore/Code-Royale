@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import GlassCard from '../../../components/ui/GlassCard';
-import ChartCard from '../../../components/ui/ChartCard';
+import GlassCard from '../../components/ui/GlassCard';
+import ChartCard from '../../components/ui/ChartCard';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const HealthMonitoring = () => {

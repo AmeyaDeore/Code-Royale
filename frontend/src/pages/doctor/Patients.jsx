@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import api from '../../../services/api';
-import GlassCard from '../../../components/ui/GlassCard';
+import api from '../../services/api';
+import GlassCard from '../../components/ui/GlassCard';
 import { Search, Activity, FileText, ChevronRight } from 'lucide-react';
 
 const Patients = () => {

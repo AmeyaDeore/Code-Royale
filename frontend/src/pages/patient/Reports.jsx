@@ -1,4 +1,4 @@
-import GlassCard from '../../../components/ui/GlassCard';
+import GlassCard from '../../components/ui/GlassCard';
 
 const Reports = () => {
   return (

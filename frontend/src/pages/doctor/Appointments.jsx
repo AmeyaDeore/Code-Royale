@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import api from '../../../services/api';
-import GlassCard from '../../../components/ui/GlassCard';
+import api from '../../services/api';
+import GlassCard from '../../components/ui/GlassCard';
 import { Video, Calendar as CalendarIcon, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
 

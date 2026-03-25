@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import api from '../../../services/api';
-import GlassCard from '../../../components/ui/GlassCard';
-import InsightCard from '../../../components/ui/InsightCard';
+import api from '../../services/api';
+import GlassCard from '../../components/ui/GlassCard';
+import InsightCard from '../../components/ui/InsightCard';
 import { Cloud, Sun, CloudRain } from 'lucide-react';
 import { format } from 'date-fns';
 

@@ -1,5 +1,5 @@
-import GlassCard from '../../../components/ui/GlassCard';
-import ChartCard from '../../../components/ui/ChartCard';
+import GlassCard from '../../components/ui/GlassCard';
+import ChartCard from '../../components/ui/ChartCard';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
 const Analytics = () => {

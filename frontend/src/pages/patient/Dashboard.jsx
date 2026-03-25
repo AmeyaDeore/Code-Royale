@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import useAuth from '../../../hooks/useAuth';
-import api from '../../../services/api';
-import StatCard from '../../../components/ui/StatCard';
-import InsightCard from '../../../components/ui/InsightCard';
-import ChartCard from '../../../components/ui/ChartCard';
+import useAuth from '../../hooks/useAuth';
+import api from '../../services/api';
+import StatCard from '../../components/ui/StatCard';
+import InsightCard from '../../components/ui/InsightCard';
+import ChartCard from '../../components/ui/ChartCard';
 import { Activity, Heart, Moon, Droplets } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 

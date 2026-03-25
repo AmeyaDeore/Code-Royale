@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import GlassCard from '../../../components/ui/GlassCard';
+import GlassCard from '../../components/ui/GlassCard';
 import { Send, Bot, User } from 'lucide-react';
 
 const AIAssistant = () => {
