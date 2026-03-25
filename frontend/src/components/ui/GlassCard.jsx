@@ -1,5 +1,3 @@
-import { cn } from '../../utils/cn'; // Assuming I will need a generic cn utility
-// Since I haven't created a cn utility, I'll use clsx and twMerge directly here, or I can create it. Let's create it in utils or just use clsx/tailwind-merge inline.
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -22,4 +20,4 @@ const GlassCard = ({ children, className, ...props }) => {
 };
 
 export default GlassCard;
-export { cn }; // Exporting cn here for convenience, though usually it goes in a utils file
+export { cn };

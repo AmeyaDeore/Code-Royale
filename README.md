@@ -51,13 +51,26 @@ frontend/
 
 ## 5) Environment Configuration
 
-Create `backend/.env`:
+Copy the template files and adjust values as needed:
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+```
+
+`backend/.env`:
 
 ```bash
 NODE_ENV=development
 PORT=5000
 MONGO_URI=mongodb://127.0.0.1:27017/healthsphere
 JWT_SECRET=replace_with_a_long_random_secret
+```
+
+`frontend/.env`:
+
+```bash
+VITE_API_BASE_URL=/api
 ```
 
 > `JWT_SECRET` and `MONGO_URI` should be set to secure production values outside source control.
