@@ -10,7 +10,8 @@ import {
   Pill,
   Brain,
   CloudSun,
-  BarChart
+  BarChart,
+  Watch
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, toggleSidebar }) => {
@@ -28,6 +29,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
 
   const patientLinks = [
     { name: 'Dashboard', path: '/patient', icon: Home },
+    { name: 'Smart Device', path: '/patient/smart-device', icon: Watch },
     { name: 'AI Assistant', path: '/patient/assistant', icon: Brain },
     { name: 'Health Monitor', path: '/patient/health', icon: Activity },
     { name: 'Appointments', path: '/patient/appointments', icon: Calendar },

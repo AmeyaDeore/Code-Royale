@@ -20,6 +20,7 @@ import PatientReports from '../pages/patient/Reports';
 import Medication from '../pages/patient/Medication';
 import MentalHealth from '../pages/patient/MentalHealth';
 import PatientWeather from '../pages/patient/Weather';
+import SmartDevice from '../pages/patient/SmartDevice';
 
 // Doctor Pages
 import DoctorDashboard from '../pages/doctor/Dashboard';
@@ -50,6 +51,7 @@ const AppRoutes = () => {
         }
       >
         <Route index element={<PatientDashboard />} />
+        <Route path="smart-device" element={<SmartDevice />} />
         <Route path="assistant" element={<AIAssistant />} />
         <Route path="health" element={<HealthMonitoring />} />
         <Route path="appointments" element={<PatientAppointments />} />
