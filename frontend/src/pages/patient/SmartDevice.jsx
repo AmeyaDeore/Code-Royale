@@ -64,7 +64,7 @@ const SmartDevice = () => {
   const [history, setHistory] = useState(seedData);
   const [fetchStatus, setFetchStatus] = useState('Using sample wearable data');
 
-  const connectUrl = import.meta.env.VITE_GOOGLE_FIT_CONNECT_URL || '#';
+  const connectUrl = import.meta.env.VITE_GOOGLE_FIT_CONNECT_URL || '/api/auth/google';
   const sourceLabel = import.meta.env.VITE_SMART_DEVICE_SOURCE_LABEL || 'Google Fit';
   const smartDeviceApiUrl = import.meta.env.VITE_SMART_DEVICE_API_URL;
 
