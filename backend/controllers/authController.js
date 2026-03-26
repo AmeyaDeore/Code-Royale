@@ -1,14 +1,7 @@
 import User from '../models/User.js';
 import generateToken from '../utils/generateToken.js';
 import AppError from '../utils/appError.js';
-
-const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const GOOGLE_FIT_SCOPES = [
-  'https://www.googleapis.com/auth/fitness.activity.read',
-  'https://www.googleapis.com/auth/fitness.heart_rate.read',
-  'https://www.googleapis.com/auth/fitness.oxygen_saturation.read',
-];
+import { buildGoogleAuthUrl, exchangeCodeForTokens, saveGoogleTokens } from '../services/googleFitService.js';
 
 export const registerUser = async (req, res, next) => {
   try {
@@ -73,23 +66,17 @@ export const loginUser = async (req, res, next) => {
 
 export const startGoogleAuth = async (req, res, next) => {
   try {
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    const { uid } = req.query;
 
-    if (!clientId || !redirectUri) {
+    if (!uid) {
+      return next(new AppError('Missing uid for Google OAuth connect flow', 400, 'MISSING_UID'));
+    }
+
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_REDIRECT_URI) {
       return next(new AppError('Google OAuth is not configured on server', 500, 'GOOGLE_OAUTH_NOT_CONFIGURED'));
     }
 
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: 'code',
-      access_type: 'offline',
-      prompt: 'consent',
-      scope: GOOGLE_FIT_SCOPES.join(' '),
-    });
-
-    return res.redirect(`${GOOGLE_AUTH_URL}?${params.toString()}`);
+    return res.redirect(buildGoogleAuthUrl(uid));
   } catch (error) {
     next(error);
   }
@@ -97,42 +84,28 @@ export const startGoogleAuth = async (req, res, next) => {
 
 export const googleAuthCallback = async (req, res, next) => {
   try {
-    const { code } = req.query;
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    const { code, state } = req.query;
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-    if (!code) {
-      return res.redirect(`${frontendUrl}/patient/smart-device?googleFit=failed&reason=missing_code`);
+    if (!code || !state) {
+      return res.redirect(`${frontendUrl}/patient/smart-device?googleFit=failed&reason=missing_code_or_state`);
     }
 
-    if (!clientId || !clientSecret || !redirectUri) {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REDIRECT_URI) {
       return res.redirect(`${frontendUrl}/patient/smart-device?googleFit=failed&reason=server_config`);
     }
 
-    const tokenBody = new URLSearchParams({
-      code: String(code),
-      client_id: clientId,
-      client_secret: clientSecret,
-      redirect_uri: redirectUri,
-      grant_type: 'authorization_code',
-    });
+    const tokens = await exchangeCodeForTokens(String(code));
 
-    const tokenResponse = await fetch(GOOGLE_TOKEN_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: tokenBody,
+    await saveGoogleTokens({
+      userId: String(state),
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in,
     });
-
-    if (!tokenResponse.ok) {
-      return res.redirect(`${frontendUrl}/patient/smart-device?googleFit=failed&reason=token_exchange`);
-    }
 
     return res.redirect(`${frontendUrl}/patient/smart-device?googleFit=connected`);
   } catch (error) {
-    next(error);
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/patient/smart-device?googleFit=failed&reason=token_exchange`);
   }
 };

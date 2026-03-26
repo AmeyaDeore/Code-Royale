@@ -15,6 +15,15 @@ const healthDataSchema = new mongoose.Schema(
       heartRate: {
         type: Number,
       },
+      oxygenSaturation: {
+        type: Number,
+      },
+      respiratoryRate: {
+        type: Number,
+      },
+      steps: {
+        type: Number,
+      },
       bloodPressure: {
         systolic: { type: Number },
         diastolic: { type: Number },
@@ -30,6 +39,10 @@ const healthDataSchema = new mongoose.Schema(
       type: Number,
       min: 0,
       max: 100,
+    },
+    source: {
+      type: String,
+      default: 'manual',
     },
   },
   {

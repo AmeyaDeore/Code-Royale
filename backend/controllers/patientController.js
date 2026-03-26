@@ -1,6 +1,15 @@
 import User from '../models/User.js';
 import HealthData from '../models/HealthData.js';
 import AppError from '../utils/appError.js';
+import { fetchGoogleFitData, getValidAccessToken } from '../services/googleFitService.js';
+
+const toSmartDeviceRow = (entry) => ({
+  timestamp: entry.date || entry.createdAt,
+  heartRate: entry.metrics?.heartRate || 0,
+  oxygenSaturation: entry.metrics?.oxygenSaturation || 0,
+  respiratoryRate: entry.metrics?.respiratoryRate || 0,
+  steps: entry.metrics?.steps || 0,
+});
 
 export const getProfile = async (req, res, next) => {
   try {
@@ -49,6 +58,95 @@ export const createHealthData = async (req, res, next) => {
     res.status(201).json({
       status: 'success',
       data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSmartDeviceLiveData = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const accessToken = await getValidAccessToken(userId);
+    const live = await fetchGoogleFitData(accessToken);
+
+    const saved = await HealthData.create({
+      patientId: userId,
+      date: live.timestamp,
+      metrics: {
+        heartRate: live.heartRate,
+        oxygenSaturation: live.oxygenSaturation,
+        respiratoryRate: live.respiratoryRate,
+        steps: live.steps,
+      },
+      source: 'googlefit',
+    });
+
+    res.json({
+      status: 'success',
+      data: toSmartDeviceRow(saved),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSmartDeviceHistory = async (req, res, next) => {
+  try {
+    const limit = Number(req.query.limit || 120);
+    const entries = await HealthData.find({ patientId: req.user._id, source: 'googlefit' })
+      .sort({ date: -1 })
+      .limit(limit);
+
+    res.json({
+      status: 'success',
+      data: entries.reverse().map(toSmartDeviceRow),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSmartDeviceTodaySummary = async (req, res, next) => {
+  try {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const entries = await HealthData.find({
+      patientId: req.user._id,
+      source: 'googlefit',
+      date: { $gte: start },
+    }).sort({ date: 1 });
+
+    if (!entries.length) {
+      return res.json({
+        status: 'success',
+        data: {
+          avgHeartRate: 0,
+          maxHeartRate: 0,
+          totalSteps: 0,
+          records: 0,
+        },
+      });
+    }
+
+    const rates = entries.map((entry) => entry.metrics?.heartRate || 0).filter((value) => value > 0);
+    const avgHeartRate = rates.length
+      ? Math.round(rates.reduce((sum, value) => sum + value, 0) / rates.length)
+      : 0;
+    const maxHeartRate = rates.length ? Math.max(...rates) : 0;
+
+    const latestByTime = entries[entries.length - 1];
+    const totalSteps = latestByTime?.metrics?.steps || 0;
+
+    return res.json({
+      status: 'success',
+      data: {
+        avgHeartRate,
+        maxHeartRate,
+        totalSteps,
+        records: entries.length,
+      },
     });
   } catch (error) {
     next(error);

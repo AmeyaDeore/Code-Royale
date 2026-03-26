@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, Heart, Footprints, Wind, ShieldAlert, Watch } from 'lucide-react';
 import { AreaChart, Area, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, LineChart, Line } from 'recharts';
+import api from '../../services/api';
+import useAuth from '../../hooks/useAuth';
 
 const RANGE_OPTIONS = [
   { label: '15m', minutes: 15 },
@@ -21,85 +23,67 @@ const METRIC_COLORS = {
   respiratoryRate: '#F59E0B',
 };
 
-const now = Date.now();
-const seedData = Array.from({ length: 36 }, (_, i) => {
-  const timestamp = new Date(now - (35 - i) * 5 * 60 * 1000).toISOString();
-  return {
-    timestamp,
-    heartRate: 68 + Math.round(Math.sin(i / 3) * 8 + (i % 5)),
-    oxygenSaturation: 96 + ((i + 1) % 3),
-    respiratoryRate: 14 + (i % 4),
-    steps: 2300 + i * 140,
-  };
-});
-
 function formatShortTime(value) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function normalizeRecords(payload) {
-  const candidate =
-    (Array.isArray(payload) && payload) ||
-    (Array.isArray(payload?.data) && payload.data) ||
-    (Array.isArray(payload?.history) && payload.history) ||
-    (Array.isArray(payload?.records) && payload.records) ||
-    [];
-
-  return candidate
-    .map((item) => ({
-      timestamp: item.timestamp || item.time || item.createdAt,
-      heartRate: Number(item.heartRate ?? item.hr ?? 0),
-      oxygenSaturation: Number(item.oxygenSaturation ?? item.spO2 ?? 0),
-      respiratoryRate: Number(item.respiratoryRate ?? item.respRate ?? 0),
-      steps: Number(item.steps ?? item.stepCount ?? 0),
-    }))
-    .filter((item) => item.timestamp)
-    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-}
-
 const SmartDevice = () => {
+  const { user } = useAuth();
   const [selectedRangeMin, setSelectedRangeMin] = useState(60);
   const [selectedSecondaryMetric, setSelectedSecondaryMetric] = useState('oxygenSaturation');
   const [alertThreshold, setAlertThreshold] = useState(120);
-  const [history, setHistory] = useState(seedData);
-  const [fetchStatus, setFetchStatus] = useState('Using sample wearable data');
+  const [history, setHistory] = useState([]);
+  const [summary, setSummary] = useState({ avgHeartRate: 0, maxHeartRate: 0, totalSteps: 0, records: 0 });
+  const [fetchStatus, setFetchStatus] = useState('Connect Google Fit to start live sync');
 
-  const connectUrl = import.meta.env.VITE_GOOGLE_FIT_CONNECT_URL || '/api/auth/google';
+  const connectUrl = import.meta.env.VITE_GOOGLE_FIT_CONNECT_URL || `/api/auth/google?uid=${user?.id || ''}`;
   const sourceLabel = import.meta.env.VITE_SMART_DEVICE_SOURCE_LABEL || 'Google Fit';
-  const smartDeviceApiUrl = import.meta.env.VITE_SMART_DEVICE_API_URL;
 
   useEffect(() => {
-    if (!smartDeviceApiUrl) return;
+    if (!user?.id) return;
 
-    const controller = new AbortController();
+    let isMounted = true;
 
-    const loadDeviceData = async () => {
+    const fetchHistoryAndSummary = async () => {
+      const [historyRes, summaryRes] = await Promise.all([
+        api.get('/patient/smart-device/history?limit=240'),
+        api.get('/patient/smart-device/summary/today'),
+      ]);
+
+      if (!isMounted) return;
+      setHistory(historyRes.data.data || []);
+      setSummary(summaryRes.data.data || { avgHeartRate: 0, maxHeartRate: 0, totalSteps: 0, records: 0 });
+    };
+
+    const fetchLive = async () => {
       try {
         setFetchStatus('Fetching live wearable data...');
-        const response = await fetch(smartDeviceApiUrl, { signal: controller.signal });
-        if (!response.ok) {
-          throw new Error(`Request failed with ${response.status}`);
-        }
-
-        const payload = await response.json();
-        const records = normalizeRecords(payload);
-        if (records.length > 0) {
-          setHistory(records);
-          setFetchStatus('Live wearable data loaded');
-        } else {
-          setFetchStatus('No wearable records found, showing sample data');
-        }
+        await api.get('/patient/smart-device/live');
+        await fetchHistoryAndSummary();
+        if (!isMounted) return;
+        setFetchStatus('Live Google Fit data synced');
       } catch (error) {
-        if (error.name !== 'AbortError') {
-          setFetchStatus('Could not fetch wearable data, showing sample data');
+        if (!isMounted) return;
+        const code = error.response?.data?.errorCode;
+        if (code === 'GOOGLE_FIT_NOT_CONNECTED') {
+          setFetchStatus('Google Fit not connected. Click Connect Google Fit first.');
+        } else {
+          setFetchStatus('Unable to fetch Google Fit data right now.');
         }
       }
     };
 
-    loadDeviceData();
+    fetchHistoryAndSummary().catch(() => {
+      setHistory([]);
+    });
+    fetchLive();
+    const intervalId = setInterval(fetchLive, 15000);
 
-    return () => controller.abort();
-  }, [smartDeviceApiUrl]);
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, [user?.id]);
 
   const latest = history.at(-1);
   const secondaryMetric = SECONDARY_METRIC_OPTIONS.find((option) => option.key === selectedSecondaryMetric);
@@ -109,23 +93,6 @@ const SmartDevice = () => {
     const thresholdMs = Date.now() - selectedRangeMin * 60 * 1000;
     return history.filter((item) => new Date(item.timestamp).getTime() >= thresholdMs);
   }, [history, selectedRangeMin]);
-
-  const summary = useMemo(() => {
-    if (!rangeFilteredHistory.length) {
-      return { avgHeartRate: '--', maxHeartRate: '--', totalSteps: '--', records: 0 };
-    }
-
-    const totalHeartRate = rangeFilteredHistory.reduce((acc, row) => acc + row.heartRate, 0);
-    const maxHeartRate = Math.max(...rangeFilteredHistory.map((row) => row.heartRate));
-    const totalSteps = Math.max(...rangeFilteredHistory.map((row) => row.steps));
-
-    return {
-      avgHeartRate: Math.round(totalHeartRate / rangeFilteredHistory.length),
-      maxHeartRate,
-      totalSteps,
-      records: rangeFilteredHistory.length,
-    };
-  }, [rangeFilteredHistory]);
 
   const shouldAlert = latest?.heartRate >= alertThreshold;
   const secondaryColor = METRIC_COLORS[selectedSecondaryMetric] || '#22C55E';
@@ -141,8 +108,6 @@ const SmartDevice = () => {
         </div>
         <a
           href={connectUrl}
-          target="_blank"
-          rel="noreferrer"
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 transition-colors"
         >
           <Watch className="w-4 h-4" />
@@ -168,11 +133,11 @@ const SmartDevice = () => {
         </div>
         <div className="glass-card p-4 rounded-xl border border-white/10 bg-surface/40">
           <p className="text-textSecondary text-sm">Total Steps</p>
-          <p className="text-2xl mt-1 font-semibold text-textPrimary flex items-center gap-2"><Footprints className="w-5 h-5 text-yellow-400" />{summary.totalSteps}</p>
+          <p className="text-2xl mt-1 font-semibold text-textPrimary flex items-center gap-2"><Footprints className="w-5 h-5 text-yellow-400" />{summary.totalSteps || 0}</p>
         </div>
         <div className="glass-card p-4 rounded-xl border border-white/10 bg-surface/40">
           <p className="text-textSecondary text-sm">Data Points</p>
-          <p className="text-2xl mt-1 font-semibold text-textPrimary flex items-center gap-2"><Wind className="w-5 h-5 text-sky-400" />{summary.records}</p>
+          <p className="text-2xl mt-1 font-semibold text-textPrimary flex items-center gap-2"><Wind className="w-5 h-5 text-sky-400" />{summary.records || 0}</p>
         </div>
       </div>
 
@@ -243,19 +208,19 @@ const SmartDevice = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="rounded-xl border border-white/10 bg-surface/40 p-4">
           <p className="text-sm text-textSecondary">Avg Heart Rate</p>
-          <p className="text-xl font-semibold text-textPrimary mt-1">{summary.avgHeartRate} <span className="text-sm text-textSecondary">bpm</span></p>
+          <p className="text-xl font-semibold text-textPrimary mt-1">{summary.avgHeartRate || 0} <span className="text-sm text-textSecondary">bpm</span></p>
         </div>
         <div className="rounded-xl border border-white/10 bg-surface/40 p-4">
           <p className="text-sm text-textSecondary">Max Heart Rate</p>
-          <p className="text-xl font-semibold text-textPrimary mt-1">{summary.maxHeartRate} <span className="text-sm text-textSecondary">bpm</span></p>
+          <p className="text-xl font-semibold text-textPrimary mt-1">{summary.maxHeartRate || 0} <span className="text-sm text-textSecondary">bpm</span></p>
         </div>
         <div className="rounded-xl border border-white/10 bg-surface/40 p-4">
           <p className="text-sm text-textSecondary">Total Steps</p>
-          <p className="text-xl font-semibold text-textPrimary mt-1">{summary.totalSteps} <span className="text-sm text-textSecondary">steps</span></p>
+          <p className="text-xl font-semibold text-textPrimary mt-1">{summary.totalSteps || 0} <span className="text-sm text-textSecondary">steps</span></p>
         </div>
         <div className="rounded-xl border border-white/10 bg-surface/40 p-4">
           <p className="text-sm text-textSecondary">Records</p>
-          <p className="text-xl font-semibold text-textPrimary mt-1">{summary.records} <span className="text-sm text-textSecondary">pts</span></p>
+          <p className="text-xl font-semibold text-textPrimary mt-1">{summary.records || 0} <span className="text-sm text-textSecondary">pts</span></p>
         </div>
       </div>
 
