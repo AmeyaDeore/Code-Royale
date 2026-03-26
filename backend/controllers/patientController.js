@@ -11,6 +11,17 @@ const toSmartDeviceRow = (entry) => ({
   steps: entry.metrics?.steps || 0,
 });
 
+const hasAnyMetricValue = (metrics = {}) => {
+  const values = [
+    Number(metrics.heartRate || 0),
+    Number(metrics.oxygenSaturation || 0),
+    Number(metrics.respiratoryRate || 0),
+    Number(metrics.steps || 0),
+  ];
+
+  return values.some((value) => Number.isFinite(value) && value > 0);
+};
+
 export const getProfile = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id);
@@ -70,15 +81,41 @@ export const getSmartDeviceLiveData = async (req, res, next) => {
     const accessToken = await getValidAccessToken(userId);
     const live = await fetchGoogleFitData(accessToken);
 
+    const liveMetrics = {
+      heartRate: live.heartRate,
+      oxygenSaturation: live.oxygenSaturation,
+      respiratoryRate: live.respiratoryRate,
+      steps: live.steps,
+    };
+
+    if (!hasAnyMetricValue(liveMetrics)) {
+      const fallback = await HealthData.findOne({
+        patientId: userId,
+        source: 'googlefit',
+        $or: [
+          { 'metrics.heartRate': { $gt: 0 } },
+          { 'metrics.oxygenSaturation': { $gt: 0 } },
+          { 'metrics.respiratoryRate': { $gt: 0 } },
+          { 'metrics.steps': { $gt: 0 } },
+        ],
+      }).sort({ date: -1 });
+
+      if (fallback) {
+        return res.json({
+          status: 'success',
+          data: {
+            ...toSmartDeviceRow(fallback),
+            stale: true,
+            note: 'No fresh Google Fit samples were returned; showing last available synced sample.',
+          },
+        });
+      }
+    }
+
     const saved = await HealthData.create({
       patientId: userId,
       date: live.timestamp,
-      metrics: {
-        heartRate: live.heartRate,
-        oxygenSaturation: live.oxygenSaturation,
-        respiratoryRate: live.respiratoryRate,
-        steps: live.steps,
-      },
+      metrics: liveMetrics,
       source: 'googlefit',
     });
 
@@ -98,9 +135,14 @@ export const getSmartDeviceHistory = async (req, res, next) => {
       .sort({ date: -1 })
       .limit(limit);
 
+    const cleaned = entries
+      .reverse()
+      .map(toSmartDeviceRow)
+      .filter((row) => hasAnyMetricValue(row));
+
     res.json({
       status: 'success',
-      data: entries.reverse().map(toSmartDeviceRow),
+      data: cleaned,
     });
   } catch (error) {
     next(error);
@@ -136,8 +178,10 @@ export const getSmartDeviceTodaySummary = async (req, res, next) => {
       : 0;
     const maxHeartRate = rates.length ? Math.max(...rates) : 0;
 
-    const latestByTime = entries[entries.length - 1];
-    const totalSteps = latestByTime?.metrics?.steps || 0;
+    const totalSteps = entries.reduce(
+      (maxSteps, entry) => Math.max(maxSteps, Number(entry.metrics?.steps || 0)),
+      0
+    );
 
     return res.json({
       status: 'success',

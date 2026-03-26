@@ -32,9 +32,11 @@ const SmartDevice = () => {
   const [selectedRangeMin, setSelectedRangeMin] = useState(60);
   const [selectedSecondaryMetric, setSelectedSecondaryMetric] = useState('oxygenSaturation');
   const [alertThreshold, setAlertThreshold] = useState(120);
+  const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState([]);
   const [summary, setSummary] = useState({ avgHeartRate: 0, maxHeartRate: 0, totalSteps: 0, records: 0 });
-  const [fetchStatus, setFetchStatus] = useState('Connect Google Fit to start live sync');
+  const [fetchStatus, setFetchStatus] = useState('Preparing wearable sync...');
+  const [lastSyncAt, setLastSyncAt] = useState(null);
 
   const connectUrl = import.meta.env.VITE_GOOGLE_FIT_CONNECT_URL || `/api/auth/google?uid=${user?.id || ''}`;
   const sourceLabel = import.meta.env.VITE_SMART_DEVICE_SOURCE_LABEL || 'Google Fit';
@@ -44,6 +46,8 @@ const SmartDevice = () => {
 
     let isMounted = true;
 
+    const defaultSummary = { avgHeartRate: 0, maxHeartRate: 0, totalSteps: 0, records: 0 };
+
     const fetchHistoryAndSummary = async () => {
       const [historyRes, summaryRes] = await Promise.all([
         api.get('/patient/smart-device/history?limit=240'),
@@ -52,32 +56,72 @@ const SmartDevice = () => {
 
       if (!isMounted) return;
       setHistory(historyRes.data.data || []);
-      setSummary(summaryRes.data.data || { avgHeartRate: 0, maxHeartRate: 0, totalSteps: 0, records: 0 });
+      setSummary(summaryRes.data.data || defaultSummary);
+      setLastSyncAt(new Date());
     };
 
     const fetchLive = async () => {
       try {
-        setFetchStatus('Fetching live wearable data...');
-        await api.get('/patient/smart-device/live');
-        await fetchHistoryAndSummary();
-        if (!isMounted) return;
-        setFetchStatus('Live Google Fit data synced');
+        const liveRes = await api.get('/patient/smart-device/live');
+        const liveData = liveRes?.data?.data;
+        if (liveData?.stale) {
+          return {
+            ok: false,
+            message: liveData.note || 'No fresh Google Fit samples available. Showing last synced values.',
+          };
+        }
+        return { ok: true };
       } catch (error) {
-        if (!isMounted) return;
         const code = error.response?.data?.errorCode;
         if (code === 'GOOGLE_FIT_NOT_CONNECTED') {
-          setFetchStatus('Google Fit not connected. Click Connect Google Fit first.');
-        } else {
-          setFetchStatus('Unable to fetch Google Fit data right now.');
+          return { ok: false, message: 'Google Fit not connected. Click Connect Google Fit first.' };
         }
+        return { ok: false, message: 'Unable to fetch fresh Google Fit data right now. Showing last synced values.' };
       }
     };
 
-    fetchHistoryAndSummary().catch(() => {
-      setHistory([]);
-    });
-    fetchLive();
-    const intervalId = setInterval(fetchLive, 15000);
+    const refreshDashboard = async (withLiveSync = true) => {
+      if (!isMounted) return;
+
+      setLoading(true);
+      setFetchStatus(withLiveSync ? 'Fetching live wearable data...' : 'Refreshing smartwatch data...');
+
+      let liveResult = { ok: true };
+      if (withLiveSync) {
+        liveResult = await fetchLive();
+      }
+
+      try {
+        await fetchHistoryAndSummary();
+      } catch (_error) {
+        if (!isMounted) return;
+        setHistory([]);
+        setSummary(defaultSummary);
+        setFetchStatus('Unable to load smartwatch history right now.');
+        setLoading(false);
+        return;
+      }
+
+      if (!isMounted) return;
+      if (liveResult.ok) {
+        setFetchStatus('Live Google Fit data synced');
+      } else {
+        setFetchStatus(liveResult.message);
+      }
+      setLoading(false);
+    };
+
+    const query = new URLSearchParams(window.location.search);
+    const googleFitStatus = query.get('googleFit');
+    if (googleFitStatus === 'connected') {
+      setFetchStatus('Google Fit connected. Starting live sync...');
+    }
+    if (googleFitStatus === 'failed') {
+      setFetchStatus('Google Fit connection failed. Please try connecting again.');
+    }
+
+    refreshDashboard(true);
+    const intervalId = setInterval(() => refreshDashboard(true), 15000);
 
     return () => {
       isMounted = false;
@@ -113,6 +157,70 @@ const SmartDevice = () => {
           <Watch className="w-4 h-4" />
           Connect Google Fit
         </a>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={async () => {
+            setLoading(true);
+            setFetchStatus('Fetching live wearable data...');
+            try {
+              await api.get('/patient/smart-device/live');
+              const [historyRes, summaryRes] = await Promise.all([
+                api.get('/patient/smart-device/history?limit=240'),
+                api.get('/patient/smart-device/summary/today'),
+              ]);
+              setHistory(historyRes.data.data || []);
+              setSummary(summaryRes.data.data || { avgHeartRate: 0, maxHeartRate: 0, totalSteps: 0, records: 0 });
+              setLastSyncAt(new Date());
+              setFetchStatus('Live Google Fit data synced');
+            } catch (error) {
+              const code = error.response?.data?.errorCode;
+              setFetchStatus(
+                code === 'GOOGLE_FIT_NOT_CONNECTED'
+                  ? 'Google Fit not connected. Click Connect Google Fit first.'
+                  : 'Unable to sync data right now. Please try again.'
+              );
+            } finally {
+              setLoading(false);
+            }
+          }}
+          disabled={loading}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-500 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          Sync Now
+        </button>
+
+        <button
+          type="button"
+          onClick={async () => {
+            setLoading(true);
+            setFetchStatus('Refreshing smartwatch data...');
+            try {
+              const [historyRes, summaryRes] = await Promise.all([
+                api.get('/patient/smart-device/history?limit=240'),
+                api.get('/patient/smart-device/summary/today'),
+              ]);
+              setHistory(historyRes.data.data || []);
+              setSummary(summaryRes.data.data || { avgHeartRate: 0, maxHeartRate: 0, totalSteps: 0, records: 0 });
+              setLastSyncAt(new Date());
+              setFetchStatus('Dashboard refreshed');
+            } catch (_error) {
+              setFetchStatus('Unable to refresh smartwatch data right now.');
+            } finally {
+              setLoading(false);
+            }
+          }}
+          disabled={loading}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white/10 text-textPrimary font-medium hover:bg-white/20 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          Refresh
+        </button>
+
+        <p className="text-xs text-textSecondary/80">
+          {lastSyncAt ? `Last sync: ${lastSyncAt.toLocaleTimeString()}` : 'Last sync: not yet'}
+        </p>
       </div>
 
       {shouldAlert ? (

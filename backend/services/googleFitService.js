@@ -11,8 +11,8 @@ export const GOOGLE_FIT_SCOPES = [
   'https://www.googleapis.com/auth/fitness.oxygen_saturation.read',
 ];
 
-const LIVE_WINDOW_MS = 15 * 60 * 1000;
-const LIVE_BUCKET_MS = 15 * 1000;
+const LIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const LIVE_BUCKET_MS = 5 * 60 * 1000;
 
 export const buildGoogleAuthUrl = (userId) => {
   const params = new URLSearchParams({
@@ -125,6 +125,18 @@ const toNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const extractNumericValues = (value = {}) => {
+  if (typeof value.intVal !== 'undefined' || typeof value.fpVal !== 'undefined') {
+    return [toNumber(value.intVal ?? value.fpVal ?? 0)];
+  }
+
+  if (Array.isArray(value.mapVal)) {
+    return value.mapVal.map((entry) => toNumber(entry?.value?.fpVal ?? entry?.value?.intVal ?? 0));
+  }
+
+  return [];
+};
+
 const getMetricKind = (dataset = {}, point = {}) => {
   const source = `${dataset.dataSourceId || ''} ${point.dataTypeName || ''}`.toLowerCase();
 
@@ -166,23 +178,31 @@ const parseAggregateResponse = (aggResponse = {}) => {
         latestTimestampMs = Math.max(latestTimestampMs, pointTimestampMs);
 
         for (const value of values) {
+          const numericValues = extractNumericValues(value);
+
           if (kind === 'steps') {
-            totalSteps += toNumber(value.intVal ?? value.fpVal ?? 0);
+            totalSteps += numericValues.reduce((sum, current) => sum + current, 0);
           }
 
           if (kind === 'heartRate') {
-            const hr = toNumber(value.fpVal ?? value.intVal ?? 0);
-            if (hr > 0) heartRatePoints.push({ value: hr, timestamp: pointTimestampMs });
+            for (const current of numericValues) {
+              const hr = toNumber(current);
+              if (hr > 0) heartRatePoints.push({ value: hr, timestamp: pointTimestampMs });
+            }
           }
 
           if (kind === 'oxygenSaturation') {
-            const spO2 = normalizeSpO2(value.fpVal ?? value.intVal ?? 0);
-            if (spO2 > 0) oxygenPoints.push({ value: spO2, timestamp: pointTimestampMs });
+            for (const current of numericValues) {
+              const spO2 = normalizeSpO2(current);
+              if (spO2 > 0) oxygenPoints.push({ value: spO2, timestamp: pointTimestampMs });
+            }
           }
 
           if (kind === 'respiratoryRate') {
-            const rr = toNumber(value.fpVal ?? value.intVal ?? 0);
-            if (rr > 0) respiratoryRatePoints.push({ value: rr, timestamp: pointTimestampMs });
+            for (const current of numericValues) {
+              const rr = toNumber(current);
+              if (rr > 0) respiratoryRatePoints.push({ value: rr, timestamp: pointTimestampMs });
+            }
           }
         }
       }
@@ -210,7 +230,7 @@ const parseAggregateResponse = (aggResponse = {}) => {
     steps: Math.max(0, Math.round(totalSteps)),
     oxygenSaturation: Math.max(0, Math.round(latestSpO2)),
     respiratoryRate: Math.max(0, Math.round(latestRespiratoryRate)),
-    timestamp: latestTimestampMs ? new Date(latestTimestampMs) : new Date(),
+    timestamp: latestTimestampMs ? new Date(latestTimestampMs) : new Date(Date.now()),
   };
 };
 
@@ -218,31 +238,47 @@ export const fetchGoogleFitData = async (accessToken) => {
   const endTimeMillis = Date.now();
   const startTimeMillis = endTimeMillis - LIVE_WINDOW_MS;
 
-  const body = {
-    aggregateBy: [
-      { dataTypeName: 'com.google.step_count.delta' },
-      { dataTypeName: 'com.google.heart_rate.bpm' },
-      { dataTypeName: 'com.google.oxygen_saturation' },
-      { dataTypeName: 'com.google.respiratory_rate' },
-    ],
-    bucketByTime: { durationMillis: LIVE_BUCKET_MS },
-    startTimeMillis,
-    endTimeMillis,
+  const runAggregate = async (aggregateBy) => {
+    const body = {
+      aggregateBy,
+      bucketByTime: { durationMillis: LIVE_BUCKET_MS },
+      startTimeMillis,
+      endTimeMillis,
+    };
+
+    const response = await fetch(GOOGLE_FIT_AGG_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return response.json();
   };
 
-  const response = await fetch(GOOGLE_FIT_AGG_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  const fullAggregate = [
+    { dataTypeName: 'com.google.step_count.delta' },
+    { dataTypeName: 'com.google.heart_rate.bpm' },
+    { dataTypeName: 'com.google.oxygen_saturation' },
+    { dataTypeName: 'com.google.respiratory_rate' },
+  ];
 
-  if (!response.ok) {
+  const fallbackAggregate = [
+    { dataTypeName: 'com.google.step_count.delta' },
+    { dataTypeName: 'com.google.heart_rate.bpm' },
+  ];
+
+  // Some accounts/devices do not expose all advanced Google Fit data types.
+  const payload = (await runAggregate(fullAggregate)) || (await runAggregate(fallbackAggregate));
+  if (!payload) {
     throw new AppError('Failed to fetch Google Fit data', 502, 'GOOGLE_FIT_FETCH_FAILED');
   }
 
-  const payload = await response.json();
   return parseAggregateResponse(payload);
 };
