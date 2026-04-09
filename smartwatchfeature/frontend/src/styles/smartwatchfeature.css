@@ -1,0 +1,76 @@
+.swf-page {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  padding: 1rem;
+  border: 1px solid #d8e2eb;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f6fbff 100%);
+}
+
+.swf-header h2 {
+  margin: 0;
+  color: #12344d;
+}
+
+.swf-header p {
+  margin-top: 0.25rem;
+  color: #3d5b73;
+}
+
+.swf-controls {
+  display: flex;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.swf-controls button {
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  background-color: #0b5cab;
+  color: #fff;
+}
+
+.swf-controls button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.swf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 0.75rem;
+}
+
+.swf-metric-tile {
+  border: 1px solid #cee0ee;
+  border-radius: 10px;
+  padding: 0.8rem;
+  background: #fff;
+}
+
+.swf-metric-title {
+  margin: 0;
+  text-transform: capitalize;
+  color: #12344d;
+}
+
+.swf-metric-value {
+  margin: 0.35rem 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.swf-metric-meta {
+  margin: 0.15rem 0;
+  color: #5a748a;
+  font-size: 0.85rem;
+}
+
+.swf-history {
+  margin-top: 1rem;
+}
+
+.swf-error {
+  color: #a01818;
+}
