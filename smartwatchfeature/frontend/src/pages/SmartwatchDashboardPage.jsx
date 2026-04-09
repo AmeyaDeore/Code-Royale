@@ -9,7 +9,7 @@ export function SmartwatchDashboardPage({ apiBaseUrl, userId, getAuthToken }) {
     userId,
     getAuthToken,
   });
-// updation
+
   useEffect(() => {
     refresh();
   }, [refresh]);
