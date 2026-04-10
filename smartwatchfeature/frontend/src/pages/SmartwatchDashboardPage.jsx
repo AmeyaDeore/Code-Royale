@@ -18,7 +18,7 @@ export function SmartwatchDashboardPage({ apiBaseUrl, userId, getAuthToken }) {
     <section className="swf-page">
       <header className="swf-header">
         <h2>Smartwatch Health Dashboard</h2>
-        <p>Monitor wearable health metrics in real-time.</p>
+        <p>Monitor wearable health metrics in real-time connectivity</p>
       </header>
 
       <SyncControls loading={loading} onRefresh={refresh} onSync={syncNow} />
