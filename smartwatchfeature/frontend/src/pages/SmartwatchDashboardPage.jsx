@@ -3,7 +3,16 @@ import { MetricTile } from "../components/MetricTile.jsx";
 import { SyncControls } from "../components/SyncControls.jsx";
 import { useSmartwatchData } from "../hooks/useSmartwatchData.js";
 
+export function SmartwatchDashboardPage({ apiBaseUrl, userId, getAuthToken }) {
+  const { latestMetrics, historyMetrics, loading, error, refresh, syncNow } = useSmartwatchData({
+    apiBaseUrl,
+    userId,
+    getAuthToken,
+  });
 
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   return (
     <section className="swf-page">
